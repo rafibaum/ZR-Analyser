@@ -18,16 +18,22 @@ public class Main {
         }
         simDir = new File(args[0]);
 
+        loadAllSims(simDir);
 
-
-        Simulation sim = loadSim("1309730");
-        System.out.println(sim.getBlueVelocity(53));
-        //blue 40 to 64
-        //red 50 to 74
-        for(int i = 0; i < 25; i++) {
-            System.out.println(i + "," + sim.getBlueVelocities()[i*5+40*5].getMagnitude() + "," + sim.getRedVelocities()[i*5+50*5].getMagnitude());
+        double maxScore = 0.0;
+        String id = "";
+        for(Simulation sim : sims) {
+            if(sim.getBlueScore() > maxScore) {
+                maxScore = sim.getBlueScore();
+                id = sim.getSimID();
+            }
+            if(sim.getRedScore() > maxScore) {
+                maxScore = sim.getRedScore();
+                id = sim.getSimID();
+            }
         }
 
+        System.out.println(maxScore + ": " + id);
     }
 
 
@@ -45,11 +51,11 @@ public class Main {
 
     public static void loadAllSims(File dir) {
         File[] simFiles = dir.listFiles();
-        ArrayList<Simulation> sims = new ArrayList<Simulation>();
+        sims = new ArrayList<Simulation>();
         for(int i = 0; i < simFiles.length; i++) {
             sims.add(new Simulation(simFiles[i]));
             if(i%20 == 0) {
-                System.out.println(i*100/1723 + "%");
+                System.out.println(i*100/simFiles.length + "%");
             }
         }
     }
