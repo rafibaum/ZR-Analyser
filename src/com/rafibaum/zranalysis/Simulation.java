@@ -1,48 +1,54 @@
 package com.rafibaum.zranalysis;
 
 import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
 import java.io.*;
 import java.util.ArrayList;
-import java.util.Comparator;
+import java.util.HashMap;
 
 /**
  * Created by rafibaum on 16/10/16.
  */
 public class Simulation {
 
-    private Position[] bluePositions, blueVelocities;
-    private Position[] redPositions, redVelocities;
+    private double blueScore, redScore;
+
+    private XYZ[] bluePositions, redPositions;
+    private XYZ[] blueVelocities, redVelocities;
+    private int[] blueDropTimes, redDropTimes;
+
+    private XYZ blueZone, redZone;
+
     private Debug[] debugs;
-    private int[] blueDropTimes;
-    private int[] redDropTimes;
+
+    private HashMap<Integer, XYZ[]> spartPositions;
+
+
+
+    private String simID;
 
     public Simulation(File file) {
+        simID = file.getName();
+        simID = simID.substring(3, simID.length()-5);
+
         try {
             //Reading file into memory
             BufferedReader reader = new BufferedReader(new FileReader(file));
-            String firstLine = reader.readLine();
-            String jsonString;
-            if(firstLine.startsWith("{\"baseSeeds")) {
-                jsonString = firstLine;
-            } else {
-                jsonString = reader.readLine();
-            }
+            reader.readLine();
+            String jsonString = reader.readLine();
 
             //Creating higher JSON objects
             JsonParser fileParser = new JsonParser();
             JsonObject jsonBody = fileParser.parse(jsonString).getAsJsonObject();
             JsonArray satData = jsonBody.get("satData").getAsJsonArray();
-
-            //Parsing blue positions
+            //Parsing blue positions/velocities
             JsonObject blueData = satData.get(0).getAsJsonObject();
             bluePositions = getPositions(blueData);
             blueVelocities = getVelocities(blueData);
 
-            //Parsing red positions
+            //Parsing red positions/velocities
             JsonObject redData = satData.get(1).getAsJsonObject();
             redPositions = getPositions(redData);
             redVelocities = getVelocities(redData);
@@ -51,34 +57,75 @@ public class Simulation {
             debugs = getDebugs(jsonBody.get("tTxt").getAsJsonArray(), blueData, redData);
 
             //Blue drop times
-            blueDropTimes = new int[3];
-            redDropTimes = new int[3];
+            JsonArray blueDropData = blueData.get("dU").getAsJsonArray().get(2).getAsJsonArray();
             int blueDrops = 0;
-            int redDrops = 0;
-            for(Debug d : debugs) {
-                if(d.getDebugType() != Type.SYSTEM) continue;
-                if(d.getMessage().equals("SPS has been placed")) {
-                    if(d.getTeam() == Sphere.BLUE) {
-                        blueDropTimes[blueDrops] = d.getTime();
-                        blueDrops++;
+            blueDropTimes = new int[3];
+            for(int i = 1; i < blueDropData.size(); i++) {
+                if(blueDropData.get(i).isJsonNull()) continue;
+                if(blueDropData.get(i).getAsInt() == 1) {
+                    if(i == 1) {
+                        blueDropTimes[blueDrops] = 0;
                     } else {
-                        redDropTimes[redDrops] = d.getTime();
-                        redDrops++;
+                        blueDropTimes[blueDrops] = i;
                     }
+                    blueDrops++;
                 }
             }
-        } catch(FileNotFoundException e) {
-            e.printStackTrace();
-        } catch (IOException e) {
+
+            //Red drop times
+            JsonArray redDropData = redData.get("dU").getAsJsonArray().get(2).getAsJsonArray();
+            int redDrops = 0;
+            redDropTimes = new int[3];
+            for(int i = 1; i < redDropData.size(); i++) {
+                if(redDropData.get(i).isJsonNull()) continue;
+                if(redDropData.get(i).getAsInt() == 1) {
+                    if(i == 1) {
+                        redDropTimes[redDrops] = 0;
+                    } else {
+                        redDropTimes[redDrops] = i;
+                    }
+                    redDrops++;
+                }
+            }
+
+            //Blue score
+            JsonArray blueScores = blueData.get("dF").getAsJsonArray().get(0).getAsJsonArray();
+            blueScore = blueScores.get(blueScores.size()-1).getAsDouble();
+
+            //Red score
+            JsonArray redScores = redData.get("dF").getAsJsonArray().get(0).getAsJsonArray();
+            redScore = redScores.get(redScores.size()-2).getAsDouble();
+
+            //Sparts
+            spartPositions = new HashMap<>();
+            spartPositions.put(0, getSpartPositions(blueData, 0));
+            spartPositions.put(1, getSpartPositions(redData, 0));
+            spartPositions.put(2, getSpartPositions(blueData, 1));
+            spartPositions.put(3, getSpartPositions(redData, 1));
+            spartPositions.put(4, getSpartPositions(blueData, 2));
+            spartPositions.put(5, getSpartPositions(redData, 2));
+
+            //Zones
+            JsonArray scoresMatrix = blueData.get("dF").getAsJsonArray();
+            blueZone = new XYZ(
+                    scoresMatrix.get(0).getAsJsonArray().get(0).getAsDouble(),
+                    scoresMatrix.get(1).getAsJsonArray().get(0).getAsDouble(),
+                    scoresMatrix.get(2).getAsJsonArray().get(0).getAsDouble());
+            redZone = new XYZ(
+                    scoresMatrix.get(3).getAsJsonArray().get(0).getAsDouble(),
+                    scoresMatrix.get(4).getAsJsonArray().get(0).getAsDouble(),
+                    scoresMatrix.get(5).getAsJsonArray().get(0).getAsDouble());
+        } catch(Exception e) {
             e.printStackTrace();
         }
     }
 
-    public Position[] getBluePositions() {
+
+    public XYZ[] getBluePositions() {
         return bluePositions;
     }
 
-    public Position[] getRedPositions() {
+    public XYZ[] getRedPositions() {
         return redPositions;
     }
 
@@ -86,11 +133,11 @@ public class Simulation {
         return debugs;
     }
 
-    public Position getBluePosition(int time) {
+    public XYZ getBluePosition(int time) {
         return bluePositions[time*5];
     }
 
-    public Position getRedPosition(int time) {
+    public XYZ getRedPosition(int time) {
         return redPositions[time*5];
     }
 
@@ -102,42 +149,92 @@ public class Simulation {
         return redDropTimes;
     }
 
-    public Position[] getBlueVelocities() {
+    public String getSimID() {
+        return simID;
+    }
+
+    public HashMap<Integer, XYZ[]> getSpartPositions() {
+        return spartPositions;
+    }
+
+    public XYZ[] getSpartPositions(int spart) {
+        return spartPositions.get(spart);
+    }
+
+    public XYZ getSpartPosition(int spart, int time) {
+        return spartPositions.get(spart)[time];
+    }
+
+    public double getBlueScore() {
+        return blueScore;
+    }
+
+    public double getRedScore() {
+        return redScore;
+    }
+
+    public XYZ getBlueZone() {
+        return blueZone;
+    }
+
+    public XYZ getRedZone() {
+        return redZone;
+    }
+
+    public XYZ[] getBlueVelocities() {
         return blueVelocities;
     }
 
-    public Position[] getRedVelocities() {
+    public XYZ[] getRedVelocities() {
         return redVelocities;
     }
 
-
-
-
-    private static Position[] getPositions(JsonObject sphereData) {
-        return getXYZs(sphereData, 0);
+    public XYZ getBlueVelocity(int time) {
+        return blueVelocities[time*5];
     }
 
-    private static Position[] getVelocities(JsonObject sphereData) {
-        return getXYZs(sphereData, 3);
+    public XYZ getRedVelocity(int time) {
+        return redVelocities[time*5];
     }
 
-    private static Position[] getXYZs(JsonObject sphereData, int offset) {
-        JsonArray spherePositionArray = sphereData.get("st").getAsJsonArray();
-        JsonArray sphereXs = spherePositionArray.get(offset).getAsJsonArray();
-        JsonArray sphereYs = spherePositionArray.get(1+offset).getAsJsonArray();
-        JsonArray sphereZs = spherePositionArray.get(2+offset).getAsJsonArray();
+    private XYZ[] getPositions(JsonObject sphereData) {
+        return getXYZData(sphereData, "st", 0);
+    }
 
-        //Storing sphere positions
-        Position[] spherePositions = new Position[sphereXs.size()];
-        for(int i = 0; i < sphereXs.size(); i++) {
-            spherePositions[i] = new Position(sphereXs.get(i).getAsFloat(), sphereYs.get(i).getAsFloat(), sphereZs.get(i).getAsFloat());
+    private XYZ[] getVelocities(JsonObject sphereData) {
+        return getXYZData(sphereData, "st", 1);
+    }
+
+    private XYZ[] getSpartPositions(JsonObject sphereData, int index) {
+        JsonArray spartPositionArray = sphereData.get("dS").getAsJsonArray();
+        JsonArray spartXs = spartPositionArray.get(index*3).getAsJsonArray();
+        JsonArray spartYs = spartPositionArray.get(index*3 + 1).getAsJsonArray();
+        JsonArray spartZs = spartPositionArray.get(index*3 + 2).getAsJsonArray();
+
+        XYZ[] spartPositions = new XYZ[spartXs.size()];
+        for(int i = 1; i < spartXs.size()-1; i++) {
+            spartPositions[i] = new XYZ(spartXs.get(i).getAsInt()/10000.0, spartYs.get(i).getAsInt()/10000.0, spartZs.get(i).getAsInt()/10000.0);
         }
 
-        return spherePositions;
+        return spartPositions;
     }
 
-    private static Debug[] getDebugs(JsonArray times, JsonObject... sphereData) {
-        ArrayList<Debug> debugs = new ArrayList<Debug>();
+    private XYZ[] getXYZData(JsonObject sphereData, String array, int offset) {
+        JsonArray positionArray = sphereData.get(array).getAsJsonArray();
+        JsonArray Xs = positionArray.get(offset*3).getAsJsonArray();
+        JsonArray Ys = positionArray.get(offset*3 + 1).getAsJsonArray();
+        JsonArray Zs = positionArray.get(offset*3 + 2).getAsJsonArray();
+
+        XYZ[] positions = new XYZ[Xs.size()];
+        for(int i = 0; i < Xs.size(); i++) {
+            positions[i] = new XYZ(Xs.get(i).getAsDouble(), Ys.get(i).getAsDouble(), Zs.get(i).getAsDouble());
+        }
+
+        return positions;
+    }
+
+    private Debug[] getDebugs(JsonArray times, JsonObject... sphereData) {
+        ArrayList<Debug> debugs = new ArrayList<>();
         debugs.ensureCapacity(times.size());
 
         //Iterates over sphere's individual data
@@ -166,6 +263,7 @@ public class Simulation {
                     } else {
                         team = Sphere.RED;
                     }
+
                     String msg;
                     if(debug.startsWith(": ")) {
                         msg = debug.substring(2);
@@ -177,9 +275,7 @@ public class Simulation {
             }
         }
 
-        debugs.sort(new Comparator<Debug>() {
-            @Override
-            public int compare(Debug o1, Debug o2) {
+        debugs.sort((Debug o1, Debug o2) -> {
                 if(o1.getTime() > o2.getTime()) {
                     return 1;
                 } else if(o1.getTime() == o2.getTime()) {
@@ -187,7 +283,6 @@ public class Simulation {
                 } else {
                     return -1;
                 }
-            }
         });
 
         return debugs.toArray(new Debug[1]);
